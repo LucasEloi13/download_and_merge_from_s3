@@ -1,0 +1,6 @@
+.venv
+output/
+outputs/
+__pycache__/
+raw_files/
+.env
