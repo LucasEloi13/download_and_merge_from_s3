@@ -73,7 +73,7 @@ python3 main.py --input-format json_array --limit 2
 
 - `--bucket`: bucket S3.
 - `--prefix`: prefixo/pasta no bucket.
-- `--output`: arquivo consolidado de saída. Padrão: `output/20584.json`.
+- `--output`: arquivo consolidado de saída. Padrão: `output/YYYYMMDD_HHMMSS.json`.
 - `--input-format`: formato dos arquivos de entrada:
 	- `json_array`: arquivos no formato `[{...}, {...}]`.
 	- `json_objects`: objetos soltos (ex.: um por linha).
@@ -99,5 +99,4 @@ python3 main.py --input-format json_array --limit 2
 ## Exemplo de saída de pastas
 
 - `raw_files/`: arquivos brutos baixados do S3.
-- `output/20584.json` (ou arquivo definido em `--output`): consolidado final.
-
+- `output/YYYYMMDD_HHMMSS.json` (ou arquivo definido em `--output`): consolidado final.

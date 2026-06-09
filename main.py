@@ -1,5 +1,6 @@
 import argparse
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -17,6 +18,11 @@ DEFAULT_PREFIX = os.getenv('AWS_S3_PREFIX')
 DEFAULT_RAW_DIR = "raw_files"
 DEFAULT_INPUT_FORMAT: Literal["json_array", "json_objects"] = "json_array"
 DEFAULT_FILE_SUFFIX = ".json"
+
+
+def default_output_file() -> str:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"output/{timestamp}.json"
 
 
 def stream_objects_to_array(source_path: Path, destination, first_item: bool, input_format: str) -> bool:
@@ -157,7 +163,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prefix", default=DEFAULT_PREFIX)
     parser.add_argument(
         "--output",
-        default="output/20584.json",
+        default=default_output_file(),
         help="Caminho do arquivo de saída consolidado",
     )
     parser.add_argument(
