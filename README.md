@@ -5,7 +5,7 @@ Script para baixar arquivos JSON de um bucket S3, salvar os arquivos brutos em `
 ## Como funciona
 
 1. Carrega configurações (`.env` + argumentos CLI).
-2. Lista automaticamente as keys no S3 com base em `bucket + prefix`.
+2. Lista automaticamente as keys no S3 com base em uma ou mais URIs completas `s3://bucket/prefixo/`.
 3. Baixa os arquivos encontrados para `raw_files/`.
 4. Faz merge em streaming e escreve um único output no formato:
 
@@ -40,8 +40,7 @@ Exemplo:
 
 ```env
 AWS_PROFILE=seu-profile
-AWS_S3_BUCKET=nome-do-bucket
-AWS_S3_PREFIX=caminho/do/prefixo/
+AWS_S3_URIS=s3://nome-do-bucket/caminho/do/prefixo/,s3://outro-bucket/outro/prefixo/
 ```
 
 > `AWS_PROFILE` é opcional (usa credenciais padrão se não informado).
@@ -54,12 +53,21 @@ AWS_S3_PREFIX=caminho/do/prefixo/
 python3 main.py --input-format json_array
 ```
 
-### Rodar informando bucket/prefix na linha de comando
+### Rodar informando URI S3 na linha de comando
 
 ```bash
 python3 main.py \
-	--bucket prod-octaprice-crawl-input-output \
-	--prefix parallel_pdp_outputs/165/20494_matched/results/ \
+	--s3-uri s3://prod-octaprice-crawl-input-output/parallel_pdp_outputs/165/20494_matched/results/ \
+	--input-format json_array
+```
+
+### Rodar com 2 ou mais URIs
+
+```bash
+python3 main.py \
+	--s3-uri \
+	s3://bucket-1/prefixo-1/ \
+	s3://bucket-2/prefixo-2/ \
 	--input-format json_array
 ```
 
@@ -71,8 +79,7 @@ python3 main.py --input-format json_array --limit 2
 
 ## Parâmetros CLI
 
-- `--bucket`: bucket S3.
-- `--prefix`: prefixo/pasta no bucket.
+- `--s3-uri`: uma ou mais URIs S3 completas. Pode repetir o argumento ou passar várias URIs de uma vez.
 - `--output`: arquivo consolidado de saída. Padrão: `output/YYYYMMDD_HHMMSS.json`.
 - `--input-format`: formato dos arquivos de entrada:
 	- `json_array`: arquivos no formato `[{...}, {...}]`.
@@ -93,6 +100,7 @@ python3 main.py --input-format json_array --limit 2
 ## Observações importantes
 
 - O output final é sempre um array JSON único.
+- Quando duas URIs tiverem arquivos com o mesmo nome, o script salva os brutos com nome alternativo para evitar sobrescrita.
 - O script processa em streaming para reduzir uso de memória.
 - Caso rode fora de ambiente virtual, garanta que as dependências estejam instaladas no `python` usado.
 

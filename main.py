@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 from source.s3 import S3Source
 
@@ -13,8 +14,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
-DEFAULT_BUCKET = os.getenv('AWS_S3_BUCKET')
-DEFAULT_PREFIX = os.getenv('AWS_S3_PREFIX')
+DEFAULT_S3_URIS = os.getenv("AWS_S3_URIS")
 DEFAULT_RAW_DIR = "raw_files"
 DEFAULT_INPUT_FORMAT: Literal["json_array", "json_objects"] = "json_array"
 DEFAULT_FILE_SUFFIX = ".json"
@@ -91,9 +91,48 @@ def merge_raw_files(raw_files: list[Path], output_path: Path, input_format: str)
         destination.write(b"\n]\n")
 
 
+def parse_s3_uri(s3_uri: str) -> tuple[str, str]:
+    parsed = urlparse(s3_uri)
+    if parsed.scheme != "s3" or not parsed.netloc:
+        raise ValueError(
+            f"URI S3 inválida: {s3_uri}. Use o formato s3://bucket/prefixo/"
+        )
+
+    return parsed.netloc, parsed.path.lstrip("/")
+
+
+def normalize_s3_uris(raw_s3_uris: list[str] | None) -> list[str]:
+    if not raw_s3_uris:
+        return []
+
+    normalized_uris: list[str] = []
+    for value in raw_s3_uris:
+        for candidate in value.split(","):
+            normalized = candidate.strip()
+            if normalized:
+                normalized_uris.append(normalized)
+
+    return normalized_uris
+
+
+def build_destination_path(raw_dir_path: Path, key: str) -> Path:
+    filename = Path(key).name
+    destination = raw_dir_path / filename
+    if not destination.exists():
+        return destination
+
+    stem = Path(filename).stem
+    suffix = Path(filename).suffix
+    index = 2
+    while True:
+        candidate = raw_dir_path / f"{stem}_{index}{suffix}"
+        if not candidate.exists():
+            return candidate
+        index += 1
+
+
 def download_and_join_files(
-    bucket: str,
-    prefix: str,
+    s3_uris: list[str],
     output_file: str,
     input_format: Literal["json_array", "json_objects"] = DEFAULT_INPUT_FORMAT,
     raw_dir: str = DEFAULT_RAW_DIR,
@@ -102,10 +141,10 @@ def download_and_join_files(
     show_progress: bool = True,
     s3_source: S3Source | None = None,
 ) -> list[Path]:
-    if not bucket:
-        raise ValueError("Bucket não informado. Use --bucket ou defina AWS_S3_BUCKET.")
-    if prefix is None:
-        raise ValueError("Prefix não informado. Use --prefix ou defina AWS_S3_PREFIX.")
+    if not s3_uris:
+        raise ValueError(
+            "Nenhuma URI S3 informada. Use --s3-uri ou defina AWS_S3_URIS."
+        )
 
     source = s3_source or S3Source()
     raw_dir_path = Path(raw_dir)
@@ -114,21 +153,28 @@ def download_and_join_files(
 
     source.connect()
     try:
-        discovered_keys = source.list_keys(bucket=bucket, prefix=prefix, suffix=file_suffix)
-        discovered_keys.sort()
-        selected_keys = discovered_keys[:limit] if limit else discovered_keys
+        s3_locations = [parse_s3_uri(s3_uri) for s3_uri in s3_uris]
+        keys_to_download: list[tuple[str, str]] = []
 
-        logger.info(
-            "Encontradas %s keys em s3://%s/%s (baixando %s)",
-            len(discovered_keys),
-            bucket,
-            prefix,
-            len(selected_keys),
-        )
+        for bucket, prefix in s3_locations:
+            discovered_keys = source.list_keys(bucket=bucket, prefix=prefix, suffix=file_suffix)
+            discovered_keys.sort()
+            logger.info(
+                "Encontradas %s keys em s3://%s/%s",
+                len(discovered_keys),
+                bucket,
+                prefix,
+            )
+            keys_to_download.extend((bucket, key) for key in discovered_keys)
 
-        for key in selected_keys:
+        if limit:
+            keys_to_download = keys_to_download[:limit]
+
+        logger.info("Baixando %s arquivo(s) no total", len(keys_to_download))
+
+        for bucket, key in keys_to_download:
             logger.info("Baixando: s3://%s/%s", bucket, key)
-            destination = raw_dir_path / Path(key).name
+            destination = build_destination_path(raw_dir_path, key)
             try:
                 downloaded_file = source.download_object_to_file(
                     key=key,
@@ -159,8 +205,14 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Baixa arquivos JSON do S3 e consolida em um único JSON"
     )
-    parser.add_argument("--bucket", default=DEFAULT_BUCKET)
-    parser.add_argument("--prefix", default=DEFAULT_PREFIX)
+    parser.add_argument(
+        "--s3-uri",
+        dest="s3_uris",
+        action="append",
+        nargs="+",
+        default=None,
+        help="Uma ou mais URIs S3 completas (ex.: s3://bucket/prefixo/). Pode repetir o argumento ou passar várias URIs de uma vez.",
+    )
     parser.add_argument(
         "--output",
         default=default_output_file(),
@@ -198,10 +250,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    cli_s3_uris = [uri for group in (args.s3_uris or []) for uri in group]
+    s3_uris = normalize_s3_uris(cli_s3_uris or ([DEFAULT_S3_URIS] if DEFAULT_S3_URIS else []))
 
     download_and_join_files(
-        bucket=args.bucket,
-        prefix=args.prefix,
+        s3_uris=s3_uris,
         output_file=args.output,
         input_format=args.input_format,
         raw_dir=args.raw_dir,
